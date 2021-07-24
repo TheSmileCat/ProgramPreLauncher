@@ -8,6 +8,8 @@ using System.Windows;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.IO;
+using ProgramPreLauncher;
+using System.Windows.Forms;
 
 namespace ChobitsMCLauncher
 {
@@ -15,48 +17,37 @@ namespace ChobitsMCLauncher
     {
         private static int redoCount = 0;
         private static List<string> controlFiles;
+        private readonly static string host = "http://mc.porchwood.top:3080/minecraft/updater/";
         public static void Run()
         {
 #if Other
-            //Console.WriteLine("输入控制文件目的地址：");
+            //MainForm.UpdateMessage("输入控制文件目的地址：");
             //string controltarget = Console.ReadLine();
-            Console.WriteLine("输入原始目的地址(末尾有“/”)：");
+            MainForm.UpdateMessage("输入原始目的地址(末尾有“/”)：");
             string rawtarget = Console.ReadLine();
 #endif
             redo:
             controlFiles = new List<string>();
             if (redoCount > 1)
             {
-                reInput:
-                Console.WriteLine("\r\n\r\n程序发生了多次启动重试，确定要重试吗？\r\n[Y/Esc]重试\t\t[N/Enter]继续\t\t[C]退出");
-                ConsoleKeyInfo info = Console.ReadKey();
-                switch (info.Key)
-                {
-                    case ConsoleKey.N:
-                    case ConsoleKey.Enter:
-                        goto launch;
-                    case ConsoleKey.C:
-                        Environment.Exit(0);
-                        break;
-                    case ConsoleKey.Y:
-                    case ConsoleKey.Escape:
-                        break;
-                    default:
-                        goto reInput;
-                }
+                DialogResult result = MessageBox.Show(
+                    "程序发生了多次启动重试，确定要继续重试吗？\r\n[是]继续\t[否]启动游戏\t[取消]关闭启动器",
+                    "提示", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+                if (result == DialogResult.Cancel) Environment.Exit(0);
+                else if (result == DialogResult.No) goto launch;
             }
 #if !Other
             //程序启动“块”
-            if (Tools.HTTP.GetHttpStringData("http://chobitslive.live:3080/minecraft/updater/version.json", timeout: 2000) == null)
+            if (Tools.HTTP.GetHttpStringData(host + "version.json", timeout: 2000) == null)
             {
-                Console.WriteLine("网络错误，尝试直接启动程序");
+                MainForm.UpdateMessage("网络错误，尝试直接启动程序");
                 goto launch;
             }
 #endif
             //程序更新“块”
             {
 #if !Other
-                string control_file_s = Tools.HTTP.GetHttpStringData("http://chobitslive.live:3080/minecraft/updater/control.json");
+                string control_file_s = Tools.HTTP.GetHttpStringData(host + "control.json");
 #else           
                 string control_file_s = Tools.HTTP.GetHttpStringData(rawtarget + "control.json");
 #endif
@@ -73,14 +64,14 @@ namespace ChobitsMCLauncher
                 int filed = 0;
                 int done = 0;
 #if !Other
-                string foldsRaw = Tools.HTTP.GetHttpStringData("http://chobitslive.live:3080/minecraft/updater/publish/folds.json", timeout: 30000);
+                string foldsRaw = Tools.HTTP.GetHttpStringData(host + "publish/folds.json", timeout: 30000);
 #else
                 string foldsRaw = Tools.HTTP.GetHttpStringData(rawtarget + "folds.json", timeout: 30000);
 #endif
                 string[] folds = null;
                 if (foldsRaw == null)
                 {
-                    Console.WriteLine("网络错误，尝试直接启动程序");
+                    MainForm.UpdateMessage("网络错误，尝试直接启动程序");
                     goto launch;
                 }
                 else
@@ -102,8 +93,8 @@ namespace ChobitsMCLauncher
                     {
                         //string custom_path = (AppDomain.CurrentDomain.BaseDirectory + "../.customfiles/" + f).Replace("/", "\\") + "\\";
 #if !Other
-                        string local_path = (AppDomain.CurrentDomain.BaseDirectory + ".updater" + f).Replace("/", "\\") + "\\";
-                        string internet_path = "http://chobitslive.live:3080/minecraft/updater/publish/" + f.Replace("\\", "/") + "/";
+                        string local_path = (AppDomain.CurrentDomain.BaseDirectory + "../" + f).Replace("/", "\\") + "\\";
+                        string internet_path = host + "publish/" + f.Replace("\\", "/") + "/";
 #else
                         string local_path = (AppDomain.CurrentDomain.BaseDirectory + "files" + f).Replace("/", "\\") + "\\";
                         string internet_path = rawtarget + f.Replace("\\", "/") + "/";
@@ -120,6 +111,7 @@ namespace ChobitsMCLauncher
                                 string md5sPath = internet_path + "md5s.json";
                                 string md5s = Tools.HTTP.GetHttpStringData(md5sPath);
                                 Dictionary<string, string> dict_internet_files = JsonConvert.DeserializeObject<Dictionary<string, string>>(md5s);
+                                foreach (string controlFile in controlFiles) if (dict_internet_files.ContainsKey(controlFile)) dict_internet_files.Remove(controlFile);
                                 Dictionary<string, string> dict_local_files = new Dictionary<string, string>();
                                 //Dictionary<string, string> dict_custom_files = new Dictionary<string, string>();
                                 if (!Directory.Exists(local_path)) Directory.CreateDirectory(local_path);
@@ -222,24 +214,10 @@ namespace ChobitsMCLauncher
                     UpdateMessage("结束操作……检查文件状态");
                     if (filed > 0)
                     {
-                        reInput:
-                        Console.WriteLine("\r\n\r\n有" + filed + "个文件操作失败了，你要重试一下吗？");
-                        Console.WriteLine("[Y/Esc]重试\t\t[N/Enter]继续\t\t[C]退出");
-                        ConsoleKeyInfo info = Console.ReadKey();
-                        switch (info.Key)
+                        if (MessageBox.Show("有" + filed + "和文件操作失败了，你要重试一下吗？", "异常", MessageBoxButtons.YesNo, MessageBoxIcon.Exclamation) == DialogResult.Yes)
                         {
-                            case ConsoleKey.N:
-                            case ConsoleKey.Enter:
-                                goto launch;
-                            case ConsoleKey.C:
-                                Environment.Exit(0);
-                                break;
-                            case ConsoleKey.Y:
-                            case ConsoleKey.Escape:
-                                redoCount++;
-                                goto redo;
-                            default:
-                                goto reInput;
+                            redoCount++;
+                            goto redo;
                         }
                     }
                 }
@@ -254,11 +232,11 @@ namespace ChobitsMCLauncher
             {
 #if !Other
                 UpdateMessage("正在等待更新程序启动...");
-                System.Diagnostics.Process.Start(AppDomain.CurrentDomain.BaseDirectory + ".updater/ChobitsMCLauncher.exe");
+                System.Diagnostics.Process.Start(AppDomain.CurrentDomain.BaseDirectory + "..\\ChobitsMCLauncher.exe");
                 Thread.Sleep(1000);
                 Environment.Exit(0);
 #else
-                Console.WriteLine("操作结束，按任意键继续");
+                MainForm.UpdateMessage("操作结束，按任意键继续");
                 Console.ReadKey();
 #endif
             }
@@ -270,12 +248,12 @@ namespace ChobitsMCLauncher
             //if (a && b) mainWindow.UpdateStatus(string.Format(message, Math.Round(now, 2), Math.Round(count, 2)), now / count);
             //else if (a) mainWindow.UpdateStatus(string.Format(message, "(" + Math.Round(now, 2) + " / " + Math.Round(count, 2) + ")"), now / count);
             //else mainWindow.UpdateStatus(message + " (" + Math.Round(now, 2) + " / " + Math.Round(count, 2) + ")", now / count);
-            Console.WriteLine("[" + Math.Round(now * 100 / count, 2) + "%] " + message);
+            MainForm.UpdateMessage("[" + Math.Round(now * 100 / count, 2) + "%] " + message);
         }
         private static void UpdateMessage(string message)
         {
             //mainWindow.UpdateStatus(message, -1);
-            Console.WriteLine(message);
+            MainForm.UpdateMessage(message);
         }
         private static bool IsControlFile(string fileName)
         {

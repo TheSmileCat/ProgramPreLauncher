@@ -1,4 +1,5 @@
-﻿using System;
+﻿using ProgramPreLauncher;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -31,20 +32,27 @@ namespace ChobitsMCLauncher.Tools
             {
                 File.Delete(tempFile);    //存在则删除
             }
+            FileStream fs = null;
+            int retry = 0;
+            long lastpos = 0;
+            long length = -1;
+            ulong sum = 0;
+            redo:
             try
             {
-                FileStream fs = new FileStream(tempFile, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+                fs = new FileStream(tempFile, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
                 //设置参数
                 HttpWebRequest request = WebRequest.Create(url) as HttpWebRequest;
+                request.AddRange(fs.Length);
                 //发送请求并获取相应回应数据
                 HttpWebResponse response = request.GetResponse() as HttpWebResponse;
-                long length = response.ContentLength;
                 //直到request.GetResponse()程序才开始向目标网页发送Post请求
                 //response.ContentLength
                 Stream responseStream = response.GetResponseStream();
+                responseStream.ReadTimeout = 5000;
+                if (length == -1) length = response.ContentLength;
                 //创建本地文件写入流
                 //Stream stream = new FileStream(tempFile, FileMode.Create);
-                ulong sum = 0;
                 byte[] bArr = new byte[1024];
                 int size = responseStream.Read(bArr, 0, bArr.Length);
                 dataStatistics += (ulong)size;
@@ -67,9 +75,17 @@ namespace ChobitsMCLauncher.Tools
                 File.Move(tempFile, path);
                 return true;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return false;
+                if (lastpos == fs.Length) retry++;
+                else retry = 0;
+                lastpos = fs.Length;
+                if (retry > 3) return false;
+                else goto redo;
+            }
+            finally
+            {
+                if (fs != null) fs.Close();
             }
         }
         public static void GetHttpData(HttpReqRawReturn dataReturn, string path, int? timeout = null)
@@ -123,7 +139,7 @@ namespace ChobitsMCLauncher.Tools
         private static void UpdateSizeMessage(string message, ulong now, ulong count)
         {
             if (count == 0) UpdateMessage(string.Format(message, "已接收:" + toMemorySizeString(now)));
-            else UpdateMessage(string.Format(message, "(" + toMemorySizeString(now) + " / " + toMemorySizeString(count)) + ")", now * 1000 / count, 1000, true);
+            else UpdateMessage(string.Format(message, "(" + toMemorySizeString(now) + " / " + toMemorySizeString(count) + ")"), now * 1000 / count, 1000, true);
         }
         private static void UpdateMessage(string message, double now, double count, bool custom = false)
         {
@@ -132,17 +148,17 @@ namespace ChobitsMCLauncher.Tools
             else return;
             if (now < 0 || count < 0)
             {
-                Console.WriteLine("[" + Math.Round(now * 100 / count, 2) + "%] " + message);
+                MainForm.UpdateMessage("[" + Math.Round(now * 100 / count, 2) + "%] " + message, now / count);
                 return;
             }
             bool a = message.Contains("{0}");
             bool b = message.Contains("{1}");
             string s = null;
-            if (custom) Console.WriteLine("[" + Math.Round(now * 100 / count, 2) + "%] " + message);
-            else if (a && b) s = string.Format(message, Math.Round(now, 2), Math.Round(count, 2));
+            if (custom) MainForm.UpdateMessage("[" + Math.Round(now * 100 / count, 2) + "%] " + message, now / count);
+            else if (a && b) s = string.Format(message, Math.Round(now, 2), Math.Round(count, 2), now / count);
             else if (a) s = string.Format(message, "(" + Math.Round(now, 2) + " / " + Math.Round(count, 2) + ")");
             else s = message + " (" + Math.Round(now, 2) + " / " + Math.Round(count, 2) + ")";
-            if (s != null) Console.WriteLine("[" + Math.Round(now * 100 / count, 2) + "%] " + s);
+            if (s != null) MainForm.UpdateMessage("[" + Math.Round(now * 100 / count, 2) + "%] " + s, now / count);
         }
         private static void UpdateMessage(string message)
         {
